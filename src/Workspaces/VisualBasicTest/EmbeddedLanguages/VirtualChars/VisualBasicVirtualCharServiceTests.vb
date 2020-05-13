@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports Microsoft.CodeAnalysis.EmbeddedLanguages.VirtualChars
 Imports Microsoft.CodeAnalysis.PooledObjects
@@ -29,12 +31,6 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.EmbeddedLanguages.Virtual
             Dim virtualChars = VisualBasicVirtualCharService.Instance.TryConvertToVirtualChars(token)
             Dim actual = ConvertToString(virtualChars)
             Assert.Equal(expected, actual)
-        End Sub
-
-        Private Sub TestFailure(stringText As String)
-            Dim token = GetStringToken(stringText)
-            Dim virtualChars = VisualBasicVirtualCharService.Instance.TryConvertToVirtualChars(token)
-            Assert.True(virtualChars.IsDefault)
         End Sub
 
         <Fact>
@@ -87,7 +83,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic.UnitTests.EmbeddedLanguages.Virtual
         End Function
 
         Private Function ConvertToString(vc As VirtualChar) As String
-            Return $"[{ConvertToString(vc.Char)},[{vc.Span.Start - _statementPrefix.Length},{vc.Span.End - _statementPrefix.Length}]]"
+            Return $"[{ConvertToString(ChrW(vc.Rune.Value))},[{vc.Span.Start - _statementPrefix.Length},{vc.Span.End - _statementPrefix.Length}]]"
         End Function
 
         Private Function ConvertToString(c As Char) As String

@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -245,8 +247,8 @@ namespace Microsoft.CodeAnalysis.Test.Utilities
             XCData expectedIL,
             bool realIL = false,
             string sequencePoints = null,
-            [CallerFilePath]string callerPath = null,
-            [CallerLineNumber]int callerLine = 0)
+            [CallerFilePath] string callerPath = null,
+            [CallerLineNumber] int callerLine = 0)
         {
             return VerifyILImpl(qualifiedMethodName, expectedIL.Value, realIL, sequencePoints, callerPath, callerLine, escapeQuotes: false);
         }
@@ -256,8 +258,8 @@ namespace Microsoft.CodeAnalysis.Test.Utilities
             string expectedIL,
             bool realIL = false,
             string sequencePoints = null,
-            [CallerFilePath]string callerPath = null,
-            [CallerLineNumber]int callerLine = 0,
+            [CallerFilePath] string callerPath = null,
+            [CallerLineNumber] int callerLine = 0,
             string source = null)
         {
             return VerifyILImpl(qualifiedMethodName, expectedIL, realIL, sequencePoints, callerPath, callerLine, escapeQuotes: true, source: source);
@@ -266,8 +268,8 @@ namespace Microsoft.CodeAnalysis.Test.Utilities
         public void VerifyLocalSignature(
             string qualifiedMethodName,
             string expectedSignature,
-            [CallerLineNumber]int callerLine = 0,
-            [CallerFilePath]string callerPath = null)
+            [CallerLineNumber] int callerLine = 0,
+            [CallerFilePath] string callerPath = null)
         {
             var ilBuilder = _testData.GetMethodData(qualifiedMethodName).ILBuilder;
             string actualSignature = ILBuilderVisualizer.LocalSignatureToString(ilBuilder);

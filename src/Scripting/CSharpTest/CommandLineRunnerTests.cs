@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -168,7 +170,7 @@ $@"{ logoOutput }
 >", runner.Console.Out.ToString());
         }
 
-        [ConditionalFact(typeof(ClrOnly), Reason = "https://github.com/dotnet/roslyn/issues/30924")]
+        [ConditionalFact(typeof(WindowsDesktopOnly), Reason = "https://github.com/dotnet/roslyn/issues/30924")]
         [WorkItem(33564, "https://github.com/dotnet/roslyn/issues/33564")]
         [WorkItem(7133, "http://github.com/dotnet/roslyn/issues/7133")]
         public void TestDisplayResultsWithCurrentUICulture2()
@@ -233,7 +235,7 @@ $@"{LogoAndHelpPrompt}
             AssertEx.AssertEqualToleratingWhitespaceDifferences(
 $@"{LogoAndHelpPrompt}
 > (1,2)
-[(1, 2)]
+(1, 2)
 > ", runner.Console.Out.ToString());
         }
 
@@ -564,6 +566,31 @@ $@"{LogoAndHelpPrompt}
             }
         }
 
+        [ConditionalTheory(typeof(WindowsOnly))]
+        [InlineData(null, null)]
+        [InlineData("c:", null)]
+        [InlineData("c:\\", null)]
+        [InlineData("c:\\first", "c:\\")]
+        [InlineData("c:\\first\\", "c:\\first")]
+        [InlineData("c:\\first\\second", "c:\\first")]
+        [InlineData("c:\\first\\second\\", "c:\\first\\second")]
+        [InlineData("c:\\first\\second\\third", "c:\\first\\second")]
+        [InlineData("\\", null)]
+        [InlineData("\\first", "\\")]
+        [InlineData("\\first\\", "\\first")]
+        [InlineData("\\first\\second", "\\first")]
+        [InlineData("\\first\\second\\", "\\first\\second")]
+        [InlineData("\\first\\second\\third", "\\first\\second")]
+        [InlineData("first", "")]
+        [InlineData("first\\", "first")]
+        [InlineData("first\\second", "first")]
+        [InlineData("first\\second\\", "first\\second")]
+        [InlineData("first\\second\\third", "first\\second")]
+        public void TestGetDirectoryName_Windows(string path, string expectedOutput)
+        {
+            Assert.Equal(expectedOutput, PathUtilities.GetDirectoryName(path, isUnixLike: false));
+        }
+
         [ConditionalFact(typeof(ClrOnly), Reason = "https://github.com/dotnet/roslyn/issues/30289")]
         public void SourceSearchPaths1()
         {
@@ -801,6 +828,29 @@ $@"{LogoAndHelpPrompt}
 > #help
 { ScriptingResources.HelpText }
 > ", runner.Console.Out.ToString());
+        }
+
+        [Fact]
+        public void LangVersions()
+        {
+            var runner = CreateRunner(new[] { "/langversion:?" });
+            Assert.Equal(0, runner.RunInteractive());
+
+            var expected = Enum.GetValues(typeof(LanguageVersion)).Cast<LanguageVersion>()
+                .Select(v => v.ToDisplayString());
+
+            var actual = runner.Console.Out.ToString();
+            var acceptableSurroundingChar = new[] { '\r', '\n', '(', ')', ' ' };
+            foreach (var version in expected)
+            {
+                if (version == "latest")
+                    continue;
+
+                var foundIndex = actual.IndexOf(version);
+                Assert.True(foundIndex > 0, $"Missing version '{version}'");
+                Assert.True(Array.IndexOf(acceptableSurroundingChar, actual[foundIndex - 1]) >= 0);
+                Assert.True(Array.IndexOf(acceptableSurroundingChar, actual[foundIndex + version.Length]) >= 0);
+            }
         }
 
         [ConditionalFact(typeof(ClrOnly), Reason = "https://github.com/dotnet/roslyn/issues/30303")]

@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -1116,6 +1118,47 @@ namespace Microsoft.CodeAnalysis.Test.Utilities
             Assert.Equal(OperationKind.ConstantPattern, operation.Kind);
             VisitPatternCommon(operation);
             Assert.Same(operation.Value, operation.Children.Single());
+        }
+
+        public override void VisitRelationalPattern(IRelationalPatternOperation operation)
+        {
+            Assert.Equal(OperationKind.RelationalPattern, operation.Kind);
+            Assert.True(operation.OperatorKind switch
+            {
+                Operations.BinaryOperatorKind.LessThan => true,
+                Operations.BinaryOperatorKind.LessThanOrEqual => true,
+                Operations.BinaryOperatorKind.GreaterThan => true,
+                Operations.BinaryOperatorKind.GreaterThanOrEqual => true,
+                _ => false,
+            });
+            VisitPatternCommon(operation);
+            Assert.Same(operation.Value, operation.Children.Single());
+        }
+
+        public override void VisitBinaryPattern(IBinaryPatternOperation operation)
+        {
+            Assert.Equal(OperationKind.BinaryPattern, operation.Kind);
+            VisitPatternCommon(operation);
+            Assert.True(operation.OperatorKind switch { Operations.BinaryOperatorKind.Or => true, Operations.BinaryOperatorKind.And => true, _ => false });
+            var children = operation.Children.ToArray();
+            Assert.Equal(2, children.Length);
+            Assert.Same(operation.LeftPattern, children[0]);
+            Assert.Same(operation.RightPattern, children[1]);
+        }
+
+        public override void VisitNegatedPattern(INegatedPatternOperation operation)
+        {
+            Assert.Equal(OperationKind.NegatedPattern, operation.Kind);
+            VisitPatternCommon(operation);
+            Assert.Same(operation.NegatedPattern, operation.Children.Single());
+        }
+
+        public override void VisitTypePattern(ITypePatternOperation operation)
+        {
+            Assert.Equal(OperationKind.TypePattern, operation.Kind);
+            Assert.NotNull(operation.MatchedType);
+            VisitPatternCommon(operation);
+            Assert.Empty(operation.Children);
         }
 
         public override void VisitDeclarationPattern(IDeclarationPatternOperation operation)

@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -301,7 +303,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         case MethodKind.Destructor:
                         case MethodKind.Conversion:
                             // If we're using the metadata format, then include the return type.  
-                            // Otherwise we eschew it since it is redundant in an conversion
+                            // Otherwise we eschew it since it is redundant in a conversion
                             // signature.
                             if (format.CompilerInternalOptions.IncludesOption(SymbolDisplayCompilerInternalOptions.UseMetadataMethodNames))
                             {
@@ -790,14 +792,14 @@ namespace Microsoft.CodeAnalysis.CSharp
             }
         }
 
-        private void AddExplicitInterfaceIfRequired<T>(ImmutableArray<T> implementedMethods) where T : ISymbol
+        private void AddExplicitInterfaceIfRequired<T>(ImmutableArray<T> implementedMembers) where T : ISymbol
         {
-            if (format.MemberOptions.IncludesOption(SymbolDisplayMemberOptions.IncludeExplicitInterface) && !implementedMethods.IsEmpty)
+            if (format.MemberOptions.IncludesOption(SymbolDisplayMemberOptions.IncludeExplicitInterface) && !implementedMembers.IsEmpty)
             {
-                var implementedMethod = implementedMethods[0];
-                Debug.Assert(implementedMethod.ContainingType != null);
+                var implementedMember = implementedMembers[0];
+                Debug.Assert(implementedMember.ContainingType != null);
 
-                INamedTypeSymbol containingType = implementedMethod.ContainingType;
+                INamedTypeSymbol containingType = implementedMember.ContainingType;
                 if (containingType != null)
                 {
                     containingType.Accept(this.NotFirstVisitor);

@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Concurrent;
@@ -13,7 +15,6 @@ using Microsoft.CodeAnalysis.CodeGen;
 using Microsoft.CodeAnalysis.CSharp.Symbols;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.PooledObjects;
-using Microsoft.CodeAnalysis.Symbols;
 using Roslyn.Utilities;
 
 namespace Microsoft.CodeAnalysis.CSharp.Emit
@@ -260,8 +261,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
                                         // NOTE: Dev11 does not add synthesized static constructors to this map,
                                         //       but adds synthesized instance constructors, Roslyn adds both
                                         var method = (MethodSymbol)member;
-                                        if (method.IsDefaultValueTypeConstructor() ||
-                                            method.IsPartialMethod() && (object)method.PartialImplementationPart == null)
+                                        if (!method.ShouldEmit())
                                         {
                                             break;
                                         }
@@ -270,19 +270,26 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
                                         break;
 
                                     case SymbolKind.Property:
+                                        AddSymbolLocation(result, member);
+                                        break;
                                     case SymbolKind.Field:
                                         // NOTE: Dev11 does not add synthesized backing fields for properties,
                                         //       but adds backing fields for events, Roslyn adds both
-                                        AddSymbolLocation(result, member);
+                                        {
+                                            var field = (FieldSymbol)member;
+                                            AddSymbolLocation(result, field.TupleUnderlyingField ?? field);
+                                        }
                                         break;
 
                                     case SymbolKind.Event:
                                         AddSymbolLocation(result, member);
                                         //  event backing fields do not show up in GetMembers
-                                        FieldSymbol field = ((EventSymbol)member).AssociatedField;
-                                        if ((object)field != null)
                                         {
-                                            AddSymbolLocation(result, field);
+                                            FieldSymbol field = ((EventSymbol)member).AssociatedField;
+                                            if ((object)field != null)
+                                            {
+                                                AddSymbolLocation(result, field.TupleUnderlyingField ?? field);
+                                            }
                                         }
                                         break;
 
@@ -891,6 +898,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
 
                     return typeRef;
                 }
+                else if (namedTypeSymbol.NativeIntegerUnderlyingType is NamedTypeSymbol underlyingType)
+                {
+                    namedTypeSymbol = underlyingType;
+                }
             }
 
             // NoPia: See if this is a type, which definition we should copy into our assembly.
@@ -998,7 +1009,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             bool needDeclaration = false)
         {
             Debug.Assert(fieldSymbol.IsDefinitionOrDistinct());
-            Debug.Assert(!fieldSymbol.IsVirtualTupleField, "virtual tuple fields should be rewritten to underlying by now");
+            Debug.Assert(!fieldSymbol.IsVirtualTupleField && (object)(fieldSymbol.TupleUnderlyingField ?? fieldSymbol) == fieldSymbol, "tuple fields should be rewritten to underlying by now");
 
             if (!fieldSymbol.IsDefinition)
             {
@@ -1166,6 +1177,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             if (!methodSymbol.IsDefinition)
             {
                 Debug.Assert(!needDeclaration);
+                Debug.Assert(!(methodSymbol.OriginalDefinition is NativeIntegerMethodSymbol));
+                Debug.Assert(!(methodSymbol.ConstructedFrom is NativeIntegerMethodSymbol));
 
                 return methodSymbol;
             }
@@ -1202,6 +1215,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
                     methodRef = (Cci.IMethodReference)_genericInstanceMap.GetOrAdd(methodSymbol, methodRef);
 
                     return methodRef;
+                }
+                else if (methodSymbol is NativeIntegerMethodSymbol { UnderlyingMethod: MethodSymbol underlyingMethod })
+                {
+                    methodSymbol = underlyingMethod;
                 }
             }
 
@@ -1508,6 +1525,39 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
             return Compilation.TrySynthesizeAttribute(WellKnownMember.System_Runtime_CompilerServices_NullableContextAttribute__ctor, arguments, isOptionalUse: true);
         }
 
+        internal SynthesizedAttributeData SynthesizeNativeIntegerAttribute(Symbol symbol, TypeSymbol type)
+        {
+            Debug.Assert((object)type != null);
+            Debug.Assert(type.ContainsNativeInteger());
+
+            if ((object)Compilation.SourceModule != symbol.ContainingModule)
+            {
+                // For symbols that are not defined in the same compilation (like NoPia), don't synthesize this attribute.
+                return null;
+            }
+
+            if (type.IsNativeIntegerType)
+            {
+                return SynthesizeNativeIntegerAttribute(WellKnownMember.System_Runtime_CompilerServices_NativeIntegerAttribute__ctor, ImmutableArray<TypedConstant>.Empty);
+            }
+            else
+            {
+                NamedTypeSymbol booleanType = Compilation.GetSpecialType(SpecialType.System_Boolean);
+                Debug.Assert((object)booleanType != null);
+                var transformFlags = CSharpCompilation.NativeIntegerTransformsEncoder.Encode(type, booleanType);
+                var boolArray = ArrayTypeSymbol.CreateSZArray(booleanType.ContainingAssembly, TypeWithAnnotations.Create(booleanType));
+                var arguments = ImmutableArray.Create(new TypedConstant(boolArray, transformFlags));
+                return SynthesizeNativeIntegerAttribute(WellKnownMember.System_Runtime_CompilerServices_NativeIntegerAttribute__ctorTransformFlags, arguments);
+            }
+        }
+
+        internal virtual SynthesizedAttributeData SynthesizeNativeIntegerAttribute(WellKnownMember member, ImmutableArray<TypedConstant> arguments)
+        {
+            // For modules, this attribute should be present. Only assemblies generate and embed this type.
+            // https://github.com/dotnet/roslyn/issues/30062 Should not be optional.
+            return Compilation.TrySynthesizeAttribute(member, arguments, isOptionalUse: true);
+        }
+
         internal bool ShouldEmitNullablePublicOnlyAttribute()
         {
             // No need to look at this.GetNeedsGeneratedAttributes() since those bits are
@@ -1568,6 +1618,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Emit
         internal void EnsureNullableAttributeExists()
         {
             EnsureEmbeddableAttributeExists(EmbeddableAttributes.NullableAttribute);
+        }
+
+        internal void EnsureNativeIntegerAttributeExists()
+        {
+            EnsureEmbeddableAttributeExists(EmbeddableAttributes.NativeIntegerAttribute);
         }
     }
 }

@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -7,6 +9,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using Microsoft.CodeAnalysis.PooledObjects;
+using Microsoft.CodeAnalysis.Shared.Extensions;
 using Microsoft.CodeAnalysis.Shared.Utilities;
 using Microsoft.CodeAnalysis.Text;
 using Roslyn.Utilities;
@@ -52,9 +55,7 @@ namespace Microsoft.CodeAnalysis
             }
 
             protected char Eat(SymbolKeyType type)
-            {
-                return Eat((char)type);
-            }
+                => Eat((char)type);
 
             protected char Eat(char c)
             {
@@ -64,14 +65,10 @@ namespace Microsoft.CodeAnalysis
             }
 
             protected void EatCloseParen()
-            {
-                Eat(CloseParenChar);
-            }
+                => Eat(CloseParenChar);
 
             protected void EatOpenParen()
-            {
-                Eat(OpenParenChar);
-            }
+                => Eat(OpenParenChar);
 
             public int ReadInteger()
             {
@@ -104,9 +101,7 @@ namespace Microsoft.CodeAnalysis
             }
 
             protected char EatSpace()
-            {
-                return Eat(SpaceChar);
-            }
+                => Eat(SpaceChar);
 
             public bool ReadBoolean()
             {
@@ -166,9 +161,7 @@ namespace Microsoft.CodeAnalysis
             protected abstract TStringResult CreateNullForString();
 
             private void EatDoubleQuote()
-            {
-                Eat(DoubleQuoteChar);
-            }
+                => Eat(DoubleQuoteChar);
 
             public PooledArrayBuilder<TStringResult> ReadStringArray()
                 => ReadArray(_readString);
@@ -266,9 +259,7 @@ namespace Microsoft.CodeAnalysis
             }
 
             protected override object CreateNullForString()
-            {
-                return null;
-            }
+                => null;
         }
 
         private class SymbolKeyReader : Reader<string>
@@ -455,7 +446,7 @@ namespace Microsoft.CodeAnalysis
             /// will either be the same as the original amount written, or <c>default</c> will be 
             /// returned. It will never be less or more.  <c>default</c> will be returned if any 
             /// elements could not be resolved to the requested <typeparamref name="TSymbol"/> type 
-            /// in the provided <see cref="Compilation"/>.
+            /// in the provided <see cref="SymbolKeyReader.Compilation"/>.
             /// 
             /// Callers should <see cref="IDisposable.Dispose"/> the instance returned.  No check is
             /// necessary if <c>default</c> was returned before calling <see cref="IDisposable.Dispose"/>
@@ -495,9 +486,7 @@ namespace Microsoft.CodeAnalysis
             }
 
             protected override string CreateNullForString()
-            {
-                return null;
-            }
+                => null;
 
             #endregion
 
@@ -555,6 +544,23 @@ namespace Microsoft.CodeAnalysis
                 }
 
                 return Location.None;
+            }
+
+            public SymbolKeyResolution? ResolveLocation(Location location)
+            {
+                if (location.SourceTree != null)
+                {
+                    var node = location.FindNode(findInsideTrivia: true, getInnermostNodeForTie: true, CancellationToken);
+                    var semanticModel = Compilation.GetSemanticModel(location.SourceTree);
+                    var info = semanticModel.GetSymbolInfo(node, CancellationToken);
+                    if (info.Symbol != null)
+                        return new SymbolKeyResolution(info.Symbol);
+
+                    if (info.CandidateSymbols.Length > 0)
+                        return new SymbolKeyResolution(info.CandidateSymbols, info.CandidateReason);
+                }
+
+                return null;
             }
 
             private IModuleSymbol GetModule(IEnumerable<IModuleSymbol> modules, string moduleName)

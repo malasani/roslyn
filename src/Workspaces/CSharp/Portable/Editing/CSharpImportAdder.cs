@@ -1,9 +1,13 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 #nullable enable
 
+using System;
 using System.Collections.Generic;
 using System.Composition;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CodeActions;
@@ -19,6 +23,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Editing
     internal class CSharpImportAdder : ImportAdderService
     {
         [ImportingConstructor]
+        [Obsolete(MefConstruction.ImportingConstructorMessage, error: true)]
         public CSharpImportAdder()
         {
         }
@@ -48,7 +53,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Editing
 
             // name must refer to something that is not a namespace, but be qualified with a namespace.
             var symbol = model.GetSymbolInfo(fullName).Symbol;
-            if (symbol != null && symbol.Kind != SymbolKind.Namespace && model.GetSymbolInfo(namespacePart).Symbol is INamespaceSymbol nsSymbol)
+            if (symbol != null && symbol.Kind != SymbolKind.Namespace && model.GetSymbolInfo(namespacePart).Symbol is INamespaceSymbol)
             {
                 // use the symbols containing namespace, and not the potentially less than fully qualified namespace in the full name expression.
                 var ns = symbol.ContainingNamespace;
@@ -93,6 +98,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Editing
 
             public override bool VisitIntoStructuredTrivia => true;
 
+            [return: NotNullIfNotNull("node")]
+            public override SyntaxNode? Visit(SyntaxNode? node) => base.Visit(node);
+
             public override SyntaxNode VisitIdentifierName(IdentifierNameSyntax node)
             {
                 // We only care about xml doc comments
@@ -119,18 +127,18 @@ namespace Microsoft.CodeAnalysis.CSharp.Editing
                     return expanded.WithLeadingTrivia(leadingTrivia);
                 }
 
-                var typeArgumentList = (TypeArgumentListSyntax)base.Visit(node.TypeArgumentList);
+                var typeArgumentList = (TypeArgumentListSyntax)Visit(node.TypeArgumentList);
                 return node.Update(node.Identifier.WithLeadingTrivia(leadingTrivia), typeArgumentList);
             }
 
             public override SyntaxNode VisitQualifiedName(QualifiedNameSyntax node)
             {
-                var left = (NameSyntax)base.Visit(node.Left);
+                var left = (NameSyntax)Visit(node.Left);
                 // We don't recurse on the right, as if B is a member of the imported namespace, A.B is still not ambiguous
                 var right = node.Right;
                 if (right is GenericNameSyntax genericName)
                 {
-                    var typeArgumentList = (TypeArgumentListSyntax)base.Visit(genericName.TypeArgumentList);
+                    var typeArgumentList = (TypeArgumentListSyntax)Visit(genericName.TypeArgumentList);
                     right = genericName.Update(genericName.Identifier, typeArgumentList);
                 }
                 return node.Update(left, node.DotToken, right);

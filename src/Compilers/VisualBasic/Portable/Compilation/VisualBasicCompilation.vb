@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 Imports System.Collections.Concurrent
 Imports System.Collections.Immutable
@@ -659,7 +661,13 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 Return Me
             End If
 
-            ' Reference binding doesn't depend on previous submission so we can reuse it.
+            ' Metadata references are inherited from the previous submission,
+            ' so we can only reuse the manager if we can guarantee that these references are the same.
+            ' Check if the previous script compilation doesn't change. 
+
+            ' TODO Consider comparing the metadata references if they have been bound already.
+            ' https://github.com/dotnet/roslyn/issues/43397
+            Dim reuseReferenceManager = ScriptCompilationInfo?.PreviousScriptCompilation Is info?.PreviousScriptCompilation
 
             Return New VisualBasicCompilation(
                 Me.AssemblyName,
@@ -675,7 +683,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
                 info?.GlobalsType,
                 info IsNot Nothing,
                 _referenceManager,
-                reuseReferenceManager:=True)
+                reuseReferenceManager)
         End Function
 
         ''' <summary>
@@ -1232,7 +1240,12 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Function
 
         Private Protected Overrides Function CommonGetMetadataReference(assemblySymbol As IAssemblySymbol) As MetadataReference
-            Return GetMetadataReference(assemblySymbol.EnsureVbSymbolOrNothing(Of AssemblySymbol)(NameOf(assemblySymbol)))
+            Dim symbol = TryCast(assemblySymbol, AssemblySymbol)
+            If symbol IsNot Nothing Then
+                Return GetMetadataReference(symbol)
+            End If
+
+            Return Nothing
         End Function
 
         Public Overrides ReadOnly Property ReferencedAssemblyNames As IEnumerable(Of AssemblyIdentity)
@@ -2152,10 +2165,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
             End If
         End Sub
 
-        Friend Overrides Function AnalyzerForLanguage(analyzers As ImmutableArray(Of DiagnosticAnalyzer), analyzerManager As AnalyzerManager) As AnalyzerDriver
+        Friend Overrides Function CreateAnalyzerDriver(analyzers As ImmutableArray(Of DiagnosticAnalyzer), analyzerManager As AnalyzerManager, severityFilter As SeverityFilter) As AnalyzerDriver
             Dim getKind As Func(Of SyntaxNode, SyntaxKind) = Function(node As SyntaxNode) node.Kind
             Dim isComment As Func(Of SyntaxTrivia, Boolean) = Function(trivia As SyntaxTrivia) trivia.Kind() = SyntaxKind.CommentTrivia
-            Return New AnalyzerDriver(Of SyntaxKind)(analyzers, getKind, analyzerManager, isComment)
+            Return New AnalyzerDriver(Of SyntaxKind)(analyzers, getKind, analyzerManager, severityFilter, isComment)
         End Function
 
 #End Region
@@ -2712,6 +2725,10 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
 
         Protected Overrides Function CommonCreatePointerTypeSymbol(elementType As ITypeSymbol) As IPointerTypeSymbol
             Throw New NotSupportedException(VBResources.ThereAreNoPointerTypesInVB)
+        End Function
+
+        Protected Overrides Function CommonCreateNativeIntegerTypeSymbol(signed As Boolean) As INamedTypeSymbol
+            Throw New NotSupportedException(VBResources.ThereAreNoNativeIntegerTypesInVB)
         End Function
 
         Protected Overrides Function CommonCreateAnonymousTypeSymbol(

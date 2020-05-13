@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -6716,6 +6718,57 @@ oneMoreTime:
         {
             return new ConstantPatternOperation(operation.InputType, Visit(operation.Value), semanticModel: null,
                 syntax: operation.Syntax, isImplicit: IsImplicit(operation));
+        }
+
+        public override IOperation VisitRelationalPattern(IRelationalPatternOperation operation, int? argument)
+        {
+            return new RelationalPatternOperation(
+                operatorKind: operation.OperatorKind,
+                value: Visit(operation.Value),
+                inputType: operation.InputType,
+                semanticModel: null,
+                syntax: operation.Syntax,
+                type: operation.Type,
+                constantValue: default,
+                isImplicit: IsImplicit(operation));
+        }
+
+        public override IOperation VisitBinaryPattern(IBinaryPatternOperation operation, int? argument)
+        {
+            return new BinaryPatternOperation(
+                operatorKind: operation.OperatorKind,
+                leftPattern: (IPatternOperation)Visit(operation.LeftPattern),
+                rightPattern: (IPatternOperation)Visit(operation.RightPattern),
+                inputType: operation.InputType,
+                semanticModel: null,
+                syntax: operation.Syntax,
+                type: operation.Type,
+                constantValue: default,
+                isImplicit: IsImplicit(operation));
+        }
+
+        public override IOperation VisitNegatedPattern(INegatedPatternOperation operation, int? argument)
+        {
+            return new NegatedPatternOperation(
+                negatedPattern: (IPatternOperation)Visit(operation.NegatedPattern),
+                inputType: operation.InputType,
+                semanticModel: null,
+                syntax: operation.Syntax,
+                type: operation.Type,
+                constantValue: default,
+                isImplicit: IsImplicit(operation));
+        }
+
+        public override IOperation VisitTypePattern(ITypePatternOperation operation, int? argument)
+        {
+            return new TypePatternOperation(
+                matchedType: operation.MatchedType,
+                inputType: operation.InputType,
+                semanticModel: null,
+                syntax: operation.Syntax,
+                type: operation.Type,
+                constantValue: default,
+                isImplicit: IsImplicit(operation));
         }
 
         public override IOperation VisitDeclarationPattern(IDeclarationPatternOperation operation, int? captureIdForResult)

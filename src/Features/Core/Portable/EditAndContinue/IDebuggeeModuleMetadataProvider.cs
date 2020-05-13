@@ -1,4 +1,6 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 #nullable enable
 
@@ -23,7 +25,7 @@ namespace Microsoft.CodeAnalysis.EditAndContinue
         /// <summary>
         /// Returns an error message when any instance of a module with given <paramref name="mvid"/> disallows EnC.
         /// </summary>
-        bool IsEditAndContinueAvailable(Guid mvid, out int errorCode, [NotNullWhen(true)]out string localizedMessage);
+        bool IsEditAndContinueAvailable(Guid mvid, out int errorCode, [NotNullWhen(true)] out string localizedMessage);
 
         /// <summary>
         /// Notifies the debugger that a document changed that may affect the given module when the change is applied.

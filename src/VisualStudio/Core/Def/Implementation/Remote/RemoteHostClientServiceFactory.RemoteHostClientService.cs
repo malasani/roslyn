@@ -1,16 +1,16 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+#nullable enable
 
 using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Editor.Shared.Utilities;
 using Microsoft.CodeAnalysis.ErrorReporting;
-using Microsoft.CodeAnalysis.Execution;
-using Microsoft.CodeAnalysis.Experiments;
 using Microsoft.CodeAnalysis.Internal.Log;
-using Microsoft.CodeAnalysis.PooledObjects;
 using Microsoft.CodeAnalysis.Remote;
 using Microsoft.CodeAnalysis.Shared.TestHooks;
 using Roslyn.Utilities;
@@ -19,35 +19,34 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
 {
     internal partial class RemoteHostClientServiceFactory
     {
-        public class RemoteHostClientService : ForegroundThreadAffinitizedObject, IRemoteHostClientService
+        public sealed class RemoteHostClientService : ForegroundThreadAffinitizedObject, IRemoteHostClientService
         {
             /// <summary>
             /// this hold onto last remoteHostClient to make debugging easier
             /// </summary>
-            private static Task<RemoteHostClient> s_lastRemoteClientTask;
+            private static Task<RemoteHostClient?>? s_lastRemoteClientTask;
 
             private readonly IAsynchronousOperationListener _listener;
             private readonly Workspace _workspace;
-            private readonly IDiagnosticAnalyzerService _analyzerService;
+
+            private GlobalNotificationRemoteDeliveryService? _globalNotificationDelivery;
 
             private readonly object _gate;
 
-            private SolutionChecksumUpdater _checksumUpdater;
-            private CancellationTokenSource _shutdownCancellationTokenSource;
-            private Task<RemoteHostClient> _remoteClientTask;
+            private SolutionChecksumUpdater? _checksumUpdater;
+            private CancellationTokenSource? _shutdownCancellationTokenSource;
+            private Task<RemoteHostClient?>? _remoteClientTask;
 
             public RemoteHostClientService(
                 IThreadingContext threadingContext,
                 IAsynchronousOperationListener listener,
-                Workspace workspace,
-                IDiagnosticAnalyzerService analyzerService)
+                Workspace workspace)
                 : base(threadingContext)
             {
                 _gate = new object();
 
                 _listener = listener;
                 _workspace = workspace;
-                _analyzerService = analyzerService;
             }
 
             public Workspace Workspace => _workspace;
@@ -89,8 +88,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
 
                     var token = _shutdownCancellationTokenSource.Token;
 
-                    // create solution checksum updater
-                    _checksumUpdater = new SolutionChecksumUpdater(this, token);
+                    _checksumUpdater = new SolutionChecksumUpdater(Workspace, Listener, token);
+                    _globalNotificationDelivery = new GlobalNotificationRemoteDeliveryService(Workspace.Services, token);
 
                     _remoteClientTask = Task.Run(() => EnableAsync(token), token);
                 }
@@ -98,25 +97,29 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
 
             public void Disable()
             {
-                RemoteHostClient client = null;
+                RemoteHostClient? client = null;
 
                 lock (_gate)
                 {
-                    if (_remoteClientTask == null)
+                    var remoteClientTask = _remoteClientTask;
+                    if (remoteClientTask == null)
                     {
                         // already disabled
                         return;
                     }
 
-                    var remoteClientTask = _remoteClientTask;
                     _remoteClientTask = null;
 
-                    RemoveGlobalAssets();
+                    Contract.ThrowIfNull(_shutdownCancellationTokenSource);
+                    Contract.ThrowIfNull(_checksumUpdater);
+                    Contract.ThrowIfNull(_globalNotificationDelivery);
 
                     _shutdownCancellationTokenSource.Cancel();
 
                     _checksumUpdater.Shutdown();
                     _checksumUpdater = null;
+
+                    _globalNotificationDelivery.Dispose();
 
                     try
                     {
@@ -138,7 +141,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                     // shut it down outside of lock so that
                     // we don't call into different component while
                     // holding onto a lock
-                    client.Shutdown();
+                    client.Dispose();
                 }
             }
 
@@ -162,11 +165,11 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                 return true;
             }
 
-            public Task<RemoteHostClient> TryGetRemoteHostClientAsync(CancellationToken cancellationToken)
+            public Task<RemoteHostClient?> TryGetRemoteHostClientAsync(CancellationToken cancellationToken)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                Task<RemoteHostClient> remoteClientTask;
+                Task<RemoteHostClient?>? remoteClientTask;
                 lock (_gate)
                 {
                     remoteClientTask = _remoteClientTask;
@@ -183,21 +186,16 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
 
             private void SetRemoteHostBitness()
             {
-                var x64 = _workspace.Options.GetOption(RemoteHostOptions.OOP64Bit);
-                if (!x64)
-                {
-                    x64 = _workspace.Services.GetService<IExperimentationService>().IsExperimentEnabled(WellKnownExperimentNames.RoslynOOP64bit);
-                }
+                bool x64 = RemoteHostOptions.IsServiceHubProcess64Bit(_workspace);
 
                 // log OOP bitness
                 Logger.Log(FunctionId.RemoteHost_Bitness, KeyValueLogMessage.Create(LogType.Trace, m => m["64bit"] = x64));
 
                 // set service bitness
-                WellKnownRemoteHostServices.Set64bit(x64);
                 WellKnownServiceHubServices.Set64bit(x64);
             }
 
-            private async Task<RemoteHostClient> EnableAsync(CancellationToken cancellationToken)
+            private async Task<RemoteHostClient?> EnableAsync(CancellationToken cancellationToken)
             {
                 // if we reached here, IRemoteHostClientFactory must exist.
                 // this will make VS.Next dll to be loaded
@@ -205,60 +203,10 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                 if (client != null)
                 {
                     client.StatusChanged += OnStatusChanged;
-
-                    // set global assets on remote host
-                    var checksums = AddGlobalAssets(cancellationToken);
-
-                    // send over global asset
-                    var success = await client.TryRunRemoteAsync(
-                        WellKnownRemoteHostServices.RemoteHostService,
-                        nameof(IRemoteHostService.SynchronizeGlobalAssetsAsync),
-                        new[] { (object)checksums },
-                        _workspace.CurrentSolution,
-                        callbackTarget: null,
-                        cancellationToken).ConfigureAwait(false);
-
-                    if (success)
-                    {
-                        return client;
-                    }
+                    return client;
                 }
 
                 return null;
-            }
-
-            private Checksum[] AddGlobalAssets(CancellationToken cancellationToken)
-            {
-                var builder = ArrayBuilder<Checksum>.GetInstance();
-
-                using (Logger.LogBlock(FunctionId.RemoteHostClientService_AddGlobalAssetsAsync, cancellationToken))
-                {
-                    var snapshotService = _workspace.Services.GetService<IRemotableDataService>();
-                    var assetBuilder = new CustomAssetBuilder(_workspace);
-
-                    foreach (var reference in _analyzerService.GetHostAnalyzerReferences())
-                    {
-                        var asset = assetBuilder.Build(reference, cancellationToken);
-
-                        builder.Add(asset.Checksum);
-                        snapshotService.AddGlobalAsset(reference, asset, cancellationToken);
-                    }
-                }
-
-                return builder.ToArrayAndFree();
-            }
-
-            private void RemoveGlobalAssets()
-            {
-                using (Logger.LogBlock(FunctionId.RemoteHostClientService_RemoveGlobalAssets, CancellationToken.None))
-                {
-                    var snapshotService = _workspace.Services.GetService<IRemotableDataService>();
-
-                    foreach (var reference in _analyzerService.GetHostAnalyzerReferences())
-                    {
-                        snapshotService.RemoveGlobalAsset(reference, CancellationToken.None);
-                    }
-                }
             }
 
             private void OnStatusChanged(object sender, bool started)
@@ -267,6 +215,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                 {
                     return;
                 }
+
+                Contract.ThrowIfNull(_shutdownCancellationTokenSource);
 
                 if (_shutdownCancellationTokenSource.IsCancellationRequested)
                 {
@@ -285,12 +235,12 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
 
                         // save NoOpRemoteHostClient to remoteClient so that all RemoteHost call becomes
                         // No Op. this basically have same effect as disabling all RemoteHost features
-                        _remoteClientTask = Task.FromResult<RemoteHostClient>(new RemoteHostClient.NoOpClient(_workspace));
+                        _remoteClientTask = Task.FromResult<RemoteHostClient?>(new RemoteHostClient.NoOpClient(_workspace));
                     }
 
                     // s_lastRemoteClientTask info should be saved in the dump
                     // report NFW when connection is closed unless it is proper shutdown
-                    WatsonReporter.Report(new Exception("Connection to remote host closed"), WatsonSeverity.Critical);
+                    FatalError.ReportWithoutCrash(new InvalidOperationException("Connection to remote host closed"));
 
                     RemoteHostCrashInfoBar.ShowInfoBar(_workspace);
                 }
@@ -303,6 +253,8 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                 {
                     return;
                 }
+
+                Contract.ThrowIfNull(_shutdownCancellationTokenSource);
 
                 // log that remote host is restarted
                 Logger.Log(FunctionId.RemoteHostClientService_Restarted, KeyValueLogMessage.NoProperty);
@@ -318,7 +270,7 @@ namespace Microsoft.VisualStudio.LanguageServices.Remote
                 }
 
                 // shutdown 
-                existingClient.Shutdown();
+                existingClient.Dispose();
             }
         }
     }

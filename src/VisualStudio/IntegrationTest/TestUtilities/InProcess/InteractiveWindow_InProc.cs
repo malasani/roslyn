@@ -1,11 +1,15 @@
-﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.VisualStudio.InteractiveWindow;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.Threading;
 
 namespace Microsoft.VisualStudio.IntegrationTest.Utilities.InProcess
 {
@@ -161,7 +165,8 @@ namespace Microsoft.VisualStudio.IntegrationTest.Utilities.InProcess
 
         public void SubmitText(string text)
         {
-            _interactiveWindow.SubmitAsync(new[] { text }).Wait();
+            using var cts = new CancellationTokenSource(Helper.HangMitigatingTimeout);
+            _interactiveWindow.SubmitAsync(new[] { text }).WithCancellation(cts.Token).Wait();
         }
 
         public void CloseWindow()

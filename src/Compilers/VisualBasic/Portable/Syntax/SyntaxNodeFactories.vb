@@ -1,4 +1,6 @@
-﻿' Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
+﻿' Licensed to the .NET Foundation under one or more agreements.
+' The .NET Foundation licenses this file to you under the MIT license.
+' See the LICENSE file in the project root for more information.
 
 '-----------------------------------------------------------------------------------------------------------
 ' Contains hand-written factories for the SyntaxNodes. Most factories are
@@ -112,7 +114,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         Public Shared Function ParseTrailingTrivia(text As String, Optional offset As Integer = 0) As SyntaxTriviaList
             Dim s = New InternalSyntax.Scanner(MakeSourceText(text, offset), VisualBasicParseOptions.Default)
             Using s
-                Return New SyntaxTriviaList(Nothing, s.ScanMultilineTrivia().Node, 0, 0)
+                Return New SyntaxTriviaList(Nothing, s.ScanSingleLineTrivia().Node, 0, 0)
             End Using
         End Function
 
@@ -260,7 +262,7 @@ Namespace Microsoft.CodeAnalysis.VisualBasic
         End Function
 
         ''' <summary>
-        ''' Helper method for wrapping a string and offset in an SourceText.
+        ''' Helper method for wrapping a string and offset in a SourceText.
         ''' </summary>
         Friend Shared Function MakeSourceText(text As String, offset As Integer) As SourceText
             Return SourceText.From(text, Encoding.UTF8).GetSubText(offset)
